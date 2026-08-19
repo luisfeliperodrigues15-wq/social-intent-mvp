@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import re
 
 st.set_page_config(page_title='Radar de Intenção', page_icon='🎯', layout='wide')
 
@@ -130,47 +131,53 @@ def yt_comments(video_id, limit, api_key):
             break
     return out
 
-def x_recent_search(query, max_posts, bearer):
-    headers = {'Authorization': f'Bearer {bearer}'}
-    params = {
-        'query': query,
-        'max_results': min(100, max(10, max_posts)),
-        'tweet.fields': 'created_at,author_id,lang',
-        'expansions': 'author_id',
-        'user.fields': 'username,name'
-    }
-    data = api_get('https://api.x.com/2/tweets/search/recent', params=params, headers=headers)
-    users = {u['id']: u for u in data.get('includes', {}).get('users', [])}
+
+def mastodon_hashtag(instance, hashtag, limit=40):
+    instance = (instance or "").strip().rstrip("/")
+    if not instance.startswith("http://") and not instance.startswith("https://"):
+        instance = "https://" + instance
+
+    tag = (hashtag or "").strip().lstrip("#")
+    if not tag:
+        return []
+
+    data = api_get(
+        f"{instance}/api/v1/timelines/tag/{tag}",
+        params={"limit": min(40, max(1, int(limit)))}
+    )
+
     out = []
-    for p in data.get('data', [])[:max_posts]:
-        u = users.get(p.get('author_id'), {})
-        username = u.get('username', '')
-        author = ('@' + username) if username else u.get('name', 'Não informado')
-        link = f'https://x.com/{username}/status/{p["id"]}' if username else f'https://x.com/i/web/status/{p["id"]}'
-        out.append((author, p.get('text', ''), link, p.get('created_at', '')))
+    for status in data:
+        account = status.get("account", {}) or {}
+        acct = account.get("acct", "")
+        author = f"@{acct}" if acct else account.get("display_name", "Não informado")
+        html = status.get("content", "") or ""
+        txt = re.sub(r"<[^>]+>", " ", html)
+        txt = re.sub(r"\s+", " ", txt).strip()
+        link = status.get("url") or status.get("uri") or "-"
+        date = status.get("created_at", "-")
+        if txt:
+            out.append((author, txt, link, date))
     return out
 
-st.title('🎯 Radar de Intenção — V3 Multirrede')
+st.title('🎯 Radar de Intenção — V4 YouTube + Mastodon')
 st.caption('Busca sinais públicos de intenção em fontes com acesso oficial. Resultados exigem revisão humana.')
 
 with st.sidebar:
     st.header('Status das fontes')
     st.write('▶️ YouTube:', '✅ conectado' if secret('YOUTUBE_API_KEY') else '⚠️ falta chave')
-    st.write('𝕏 X:', '✅ conectado' if secret('X_BEARER_TOKEN') else '⚠️ falta Bearer Token')
-    st.write('📸 Instagram:', '🟡 limitado pela API Meta')
-    st.write('📘 Facebook:', '🟡 limitado pela API Meta')
-    st.write('👽 Reddit:', '🟡 exige validação de uso comercial')
+    st.write('🐘 Mastodon:', '✅ sem chave necessária')
     st.divider()
     st.subheader('Score')
     for k, v in st.session_state.terms.items():
         st.write(f'{k}: {v}')
 
-tabs = st.tabs(['🌐 Busca multirrede', '▶️ YouTube', '𝕏 X', '📸 Meta', '👽 Reddit', '📊 Radar'])
+tabs = st.tabs(['🌐 Busca multirrede', '▶️ YouTube', '🐘 Mastodon', '📊 Radar'])
 
 with tabs[0]:
     st.subheader('Busca multirrede')
     q = st.text_input('O que procurar?', value='acidente de moto sequela', key='multiq')
-    sources = st.multiselect('Fontes', ['YouTube', 'X'], default=['YouTube'])
+    sources = st.multiselect('Fontes', ['YouTube', 'Mastodon'], default=['YouTube', 'Mastodon'])
     min_score = st.slider('Score mínimo', 0, 100, 30, 5, key='multiscore')
     if st.button('🚀 Buscar em todas as fontes selecionadas'):
         added = 0
@@ -187,18 +194,20 @@ with tabs[0]:
                                 added += add_item('YouTube', author, text, link, f'{title} — {channel}', date)
                 except Exception as e:
                     st.error(f'YouTube: {e}')
-        if 'X' in sources:
-            token = secret('X_BEARER_TOKEN')
-            if not token:
-                st.error('Falta X_BEARER_TOKEN.')
-            else:
-                try:
-                    for author, text, link, date in x_recent_search(q, 50, token):
-                        sc, _, _ = score_text(text)
+        if 'Mastodon' in sources:
+            try:
+                tags = []
+                for word in q.split():
+                    clean = re.sub(r'[^0-9A-Za-zÀ-ÿ_]', '', word)
+                    if len(clean) >= 4 and clean.lower() not in [t.lower() for t in tags]:
+                        tags.append(clean)
+                for tag in tags[:4]:
+                    for author, text_post, link, date in mastodon_hashtag('mastodon.social', tag, 40):
+                        sc, _, _ = score_text(text_post)
                         if sc >= min_score:
-                            added += add_item('X', author, text, link, 'Busca recente', date)
-                except Exception as e:
-                    st.error(f'X: {e}')
+                            added += add_item('Mastodon', author, text_post, link, f'#{tag} em mastodon.social', date)
+            except Exception as e:
+                st.error(f'Mastodon: {e}')
         st.success(f'Busca concluída. {added} novos resultados adicionados ao Radar.')
 
 with tabs[1]:
@@ -225,37 +234,30 @@ with tabs[1]:
                 st.error(str(e))
 
 with tabs[2]:
-    st.subheader('X — posts recentes')
-    st.info('Precisa de um Bearer Token da X Developer Platform salvo como X_BEARER_TOKEN.')
-    q = st.text_input('Consulta do X', value='"sofri um acidente" OR "fiquei com sequela"', key='xq')
-    n = st.slider('Posts para analisar', 10, 100, 50, 10)
-    minimum = st.slider('Score mínimo', 0, 100, 20, 5, key='xs')
-    if st.button('Buscar no X'):
-        token = secret('X_BEARER_TOKEN')
-        if not token:
-            st.error('Configure X_BEARER_TOKEN no Streamlit Secrets.')
-        else:
-            added = 0
-            try:
-                for author, text, link, date in x_recent_search(q, n, token):
-                    sc, _, _ = score_text(text)
-                    if sc >= minimum:
-                        added += add_item('X', author, text, link, 'Busca recente', date)
-                st.success(f'{added} novos resultados.')
-            except Exception as e:
-                st.error(str(e))
+    st.subheader('🐘 Mastodon — posts públicos por hashtag')
+    st.info('Nesta versão de teste, não precisa de chave. A disponibilidade depende da instância.')
+
+    instance = st.text_input('Instância Mastodon', value='mastodon.social')
+    hashtag = st.text_input('Hashtag', value='acidente', help='Digite sem #')
+    c1, c2 = st.columns(2)
+    n = c1.slider('Posts para analisar', 10, 40, 40, 10, key='mast_n')
+    minimum = c2.slider('Score mínimo', 0, 100, 15, 5, key='mast_score')
+
+    if st.button('Buscar no Mastodon'):
+        added = 0
+        try:
+            results = mastodon_hashtag(instance, hashtag, n)
+            for author, text_post, link, date in results:
+                sc, _, _ = score_text(text_post)
+                if sc >= minimum:
+                    added += add_item('Mastodon', author, text_post, link, f'#{hashtag} em {instance}', date)
+            st.success(f'Busca concluída: {len(results)} posts lidos; {added} novos resultados relevantes.')
+            if not results:
+                st.info('Nenhum post público encontrado para essa hashtag nessa instância.')
+        except Exception as e:
+            st.error(f'Mastodon: {e}')
 
 with tabs[3]:
-    st.subheader('Instagram e Facebook')
-    st.warning('A Meta não oferece uma busca global aberta de comentários de toda a rede para este tipo de captação.')
-    st.write('A integração oficial é útil principalmente para contas profissionais conectadas: ler/gerenciar comentários da própria mídia, menções e interações permitidas.')
-
-with tabs[4]:
-    st.subheader('Reddit')
-    st.warning('O Reddit exige OAuth e possui termos específicos para acesso comercial à Data API.')
-    st.write('Antes de habilitar esta fonte num SaaS vendido a terceiros, precisamos validar/aprovar o uso comercial.')
-
-with tabs[5]:
     st.subheader('Resultados')
     if not st.session_state["items"]:
         st.info('Nenhum resultado ainda.')

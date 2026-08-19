@@ -1,23 +1,11 @@
-# Radar de Intenção V3 — Multirrede
+# Radar de Intenção V4 — YouTube + Mastodon
 
-## Fontes
-- YouTube: funcional via YouTube Data API v3.
-- X: funcional via X API v2 Recent Search.
-- Instagram/Facebook: limitado pela API oficial da Meta.
-- Reddit: reservado até validação do uso comercial/API.
+- YouTube: integrado via YouTube Data API v3.
+- Mastodon: busca posts públicos por hashtag em uma instância.
+- O Mastodon não exige chave nesta versão de teste.
 
-## Secrets
+Secret necessário no Streamlit:
+
 ```toml
-YOUTUBE_API_KEY = "..."
-X_BEARER_TOKEN = "..."
+YOUTUBE_API_KEY = "SUA_CHAVE"
 ```
-
-Nunca publique tokens no GitHub.
-
-
-## V3.1
-Correção de compatibilidade com sessão das versões anteriores.
-
-
-## V3.2
-Corrige conflito com `SessionState.items`, que causava o erro `'method' object is not iterable`.
