@@ -5,17 +5,38 @@ from datetime import datetime, timezone, timedelta
 
 st.set_page_config(page_title="Radar de Intenção",page_icon="🎯",layout="wide")
 st.markdown("""<style>.block-container{max-width:1250px;padding-top:1.5rem}.hero,.card{border:1px solid rgba(128,128,128,.22);border-radius:18px;padding:1.2rem;margin-bottom:1rem}.hero h1{margin:0}.muted{opacity:.68}.card{border-radius:14px}</style>""",unsafe_allow_html=True)
-TERMS={"acidente":20,"acidente de moto":35,"acidente de trabalho":35,"sequela":40,"afastado":20,"perdi movimento":45,"não consigo trabalhar":35,"auxílio":15,"indenização":20,"invalidez":30,"fiquei sem trabalhar":30}
+TERMS={
+"acidente":20,"acidente de moto":35,"acidente de trabalho":35,"bati a moto":35,
+"bati de moto":35,"me acidentei":35,"sofri um acidente":35,"aconteceu comigo":25,
+"sequela":40,"fiquei com sequela":45,"afastado":20,"estou afastado":25,
+"fiquei afastado":25,"perdi movimento":45,"não consigo mexer":40,
+"não consigo movimentar":40,"não consigo trabalhar":35,"fiquei sem trabalhar":30,
+"estou parado":20,"quebrei a perna":35,"quebrei o braço":35,"fraturei":30,
+"auxílio":15,"indenização":20,"invalidez":30
+}
+NEWS_TERMS=["segundo a polícia","portal","notícia","reportagem","jornal","saiba mais","veja o vídeo"]
+PERSONAL_TERMS=["eu ","me acidentei","sofri","aconteceu comigo","quebrei","fraturei","estou afastado","fiquei afastado","não consigo","fiquei com"]
 if "items" not in st.session_state: st.session_state["items"]=[]
+if "all_items" not in st.session_state: st.session_state["all_items"]=[]
 def secret(n):
     try:return str(st.secrets.get(n,"")).strip()
     except:return ""
 def score(t):
-    t=t.lower();s=0;h=[]
+    t=(t or "").lower();s=0;h=[]
     for k,v in TERMS.items():
-        if k in t:s+=v;h.append(k)
-    s=min(100,s);p="Alta" if s>=70 else "Média" if s>=40 else "Baixa" if s>=15 else "Irrelevante"
-    return s,p,", ".join(h) if h else "-"
+        if k in t:
+            s+=v;h.append(k)
+    personal=sum(1 for k in PERSONAL_TERMS if k in t)
+    if personal:
+        s += min(25, personal*10)
+        h.append("relato pessoal")
+    news=sum(1 for k in NEWS_TERMS if k in t)
+    if news:
+        s -= min(50, news*20)
+        h.append("possível notícia")
+    s=max(0,min(100,s))
+    p="Alta" if s>=70 else "Média" if s>=40 else "Baixa" if s>=15 else "Irrelevante"
+    return s,p,", ".join(dict.fromkeys(h)) if h else "-"
 def api(url,p):
     r=requests.get(url,params=p,timeout=25)
     if not r.ok:raise RuntimeError(f"Erro {r.status_code}: {r.text[:250]}")
@@ -51,8 +72,32 @@ def fmt(x):
 st.markdown(f"""<div class="hero"><div class="muted">INTELIGÊNCIA COMERCIAL</div><h1>🎯 Radar de Intenção</h1><div class="muted">Sinais públicos de necessidade • {datetime.now().strftime("%d/%m/%Y")}</div></div>""",unsafe_allow_html=True)
 with st.sidebar:
     st.header("Radar");st.write("▶️ YouTube","✅ conectado" if secret("YOUTUBE_API_KEY") else "⚠️ falta chave")
-    st.divider();st.write("🔥 Alta: 70–100");st.write("🟡 Média: 40–69");st.write("🔵 Baixa: 15–39")
-a,b=st.tabs(["🔎 Buscar oportunidades","📊 Oportunidades"])
+    
+with c:
+    st.subheader("🧪 Todos os comentários analisados")
+    st.caption("Aqui aparecem também os comentários que não atingiram o score mínimo. Isso ajuda a calibrar o Radar.")
+    if not st.session_state["all_items"]:
+        st.info("Nenhum comentário analisado ainda.")
+    else:
+        adf=pd.DataFrame(st.session_state["all_items"])
+        adf["dt"]=adf["data"].apply(todt)
+        adf=adf.sort_values(["dt","score"],ascending=[False,False],na_position="last")
+        st.metric("Comentários guardados",len(adf))
+        for _,r in adf.iterrows():
+            icon="🔥" if r.prioridade=="Alta" else "🟡" if r.prioridade=="Média" else "🔵" if r.prioridade=="Baixa" else "⚪"
+            txt=str(r.texto).replace("<","&lt;").replace(">","&gt;")
+            st.markdown(f"""<div class="card"><b>{icon} {r.prioridade} • Score {int(r.score)}/100</b>
+            <p>{txt}</p><div class="muted">👤 {r.autor} • 📅 {fmt(r.data)}<br>🎯 {r.sinais}<br>▶️ {r.origem}</div></div>""",
+            unsafe_allow_html=True)
+            st.link_button("Abrir comentário ↗",r.link,key=f"all_{r.link}_{_}")
+        st.download_button("⬇️ Exportar todos",adf.drop(columns=["dt"],errors="ignore").to_csv(index=False).encode("utf-8-sig"),
+                           "radar_todos_analisados.csv","text/csv")
+        if st.button("🗑️ Limpar todos analisados"):
+            st.session_state["all_items"]=[]
+            st.rerun()
+
+st.divider();st.write("🔥 Alta: 70–100");st.write("🟡 Média: 40–69");st.write("🔵 Baixa: 15–39")
+a,b,c=st.tabs(["🔎 Buscar oportunidades","📊 Oportunidades","🧪 Todos analisados"])
 with a:
     q=st.text_input("O que você procura?",value="acidente de moto sequela")
     c1,c2,c3=st.columns(3)
@@ -74,10 +119,17 @@ with a:
                             read+=1;d=todt(date)
                             if cc and (not d or d<cc):continue
                             s,pr,h=score(text)
-                            if s<minimum:continue
-                            k=(link,text);exists={(x.get("link"),x.get("texto")) for x in st.session_state["items"]}
+                            row={"autor":author,"texto":text,"score":s,"prioridade":pr,"sinais":h,
+                                 "origem":f"{title} — {channel}","link":link,"data":date}
+                            k=(link,text)
+                            all_exists={(x.get("link"),x.get("texto")) for x in st.session_state["all_items"]}
+                            if k not in all_exists:
+                                st.session_state["all_items"].append(row.copy())
+                            if s<minimum:
+                                continue
+                            exists={(x.get("link"),x.get("texto")) for x in st.session_state["items"]}
                             if k not in exists:
-                                st.session_state["items"].append({"autor":author,"texto":text,"score":s,"prioridade":pr,"sinais":h,"origem":f"{title} — {channel}","link":link,"data":date});added+=1
+                                st.session_state["items"].append(row.copy());added+=1
                 st.success(f"{read} comentários analisados • {added} novas oportunidades.")
             except Exception as e:st.error(f"YouTube: {e}")
 with b:

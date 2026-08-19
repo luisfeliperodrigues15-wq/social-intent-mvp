@@ -1,5 +1,9 @@
-# Radar de Intenção V5 Dashboard
+# Radar de Intenção V5.1
 
-Dashboard profissional, filtro de data do vídeo e comentário, cards, métricas, ordenação e CSV.
-
-Mantém `YOUTUBE_API_KEY` no Streamlit Secrets.
+Correções:
+- guarda todos os comentários analisados;
+- nova aba "Todos analisados";
+- score ampliado com expressões de relato pessoal;
+- bônus para relato em primeira pessoa;
+- penalização de sinais de notícia/portal;
+- mantém filtros de data e dashboard da V5.
