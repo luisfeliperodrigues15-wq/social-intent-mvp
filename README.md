@@ -1,11 +1,5 @@
-# Radar de Intenção V4 — YouTube + Mastodon
+# Radar de Intenção V5 Dashboard
 
-- YouTube: integrado via YouTube Data API v3.
-- Mastodon: busca posts públicos por hashtag em uma instância.
-- O Mastodon não exige chave nesta versão de teste.
+Dashboard profissional, filtro de data do vídeo e comentário, cards, métricas, ordenação e CSV.
 
-Secret necessário no Streamlit:
-
-```toml
-YOUTUBE_API_KEY = "SUA_CHAVE"
-```
+Mantém `YOUTUBE_API_KEY` no Streamlit Secrets.

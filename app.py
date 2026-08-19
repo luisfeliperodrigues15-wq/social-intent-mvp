@@ -1,285 +1,94 @@
 import streamlit as st
 import pandas as pd
 import requests
-import re
+from datetime import datetime, timezone, timedelta
 
-st.set_page_config(page_title='Radar de Intenção', page_icon='🎯', layout='wide')
-
-DEFAULT_TERMS = {
-    'acidente': 20,
-    'acidente de moto': 35,
-    'acidente de trabalho': 35,
-    'bati a moto': 35,
-    'sequela': 40,
-    'afastado': 20,
-    'perdi movimento': 45,
-    'não consigo trabalhar': 35,
-    'auxílio': 15,
-    'indenização': 20,
-    'invalidez': 30,
-    'fiquei sem trabalhar': 30,
-}
-
-if 'terms' not in st.session_state:
-    st.session_state.terms = DEFAULT_TERMS.copy()
-if "items" not in st.session_state:
-    st.session_state["items"] = []
-elif not isinstance(st.session_state["items"], list):
-    # Evita conflito com dados de sessão deixados por versões anteriores.
-    st.session_state["items"] = []
-else:
-    # Mantém apenas registros compatíveis com a V3.
-    st.session_state["items"] = [
-        x for x in st.session_state["items"]
-        if isinstance(x, dict)
-    ]
-
-def secret(name):
-    try:
-        return str(st.secrets.get(name, '')).strip()
-    except Exception:
-        return ''
-
-def score_text(text):
-    t = (text or '').lower()
-    score = 0
-    hits = []
-    for term, weight in st.session_state.terms.items():
-        if term.lower() in t:
-            score += weight
-            hits.append(term)
-    score = min(100, max(0, score))
-    if score >= 70:
-        priority = 'Alta'
-    elif score >= 40:
-        priority = 'Média'
-    elif score >= 15:
-        priority = 'Baixa'
-    else:
-        priority = 'Irrelevante'
-    return score, priority, ', '.join(hits) if hits else '-'
-
-def add_item(source, author, text, url, origin='-', date='-'):
-    key = (source, url, text)
-    existing = {(x['fonte'], x['link'], x['texto']) for x in st.session_state["items"]}
-    if key in existing:
-        return False
-    sc, pr, hits = score_text(text)
-    st.session_state["items"].append({
-        'fonte': source,
-        'autor': author or 'Não informado',
-        'texto': text,
-        'score': sc,
-        'prioridade': pr,
-        'sinais': hits,
-        'origem': origin,
-        'link': url,
-        'data': date,
-    })
-    return True
-
-def api_get(url, params=None, headers=None):
-    r = requests.get(url, params=params, headers=headers, timeout=25)
-    if not r.ok:
-        try:
-            payload = r.json()
-            msg = payload.get('error', {}).get('message') or payload.get('detail') or r.text
-        except Exception:
-            msg = r.text
-        raise RuntimeError(f'Erro {r.status_code}: {msg}')
+st.set_page_config(page_title="Radar de Intenção",page_icon="🎯",layout="wide")
+st.markdown("""<style>.block-container{max-width:1250px;padding-top:1.5rem}.hero,.card{border:1px solid rgba(128,128,128,.22);border-radius:18px;padding:1.2rem;margin-bottom:1rem}.hero h1{margin:0}.muted{opacity:.68}.card{border-radius:14px}</style>""",unsafe_allow_html=True)
+TERMS={"acidente":20,"acidente de moto":35,"acidente de trabalho":35,"sequela":40,"afastado":20,"perdi movimento":45,"não consigo trabalhar":35,"auxílio":15,"indenização":20,"invalidez":30,"fiquei sem trabalhar":30}
+if "items" not in st.session_state: st.session_state["items"]=[]
+def secret(n):
+    try:return str(st.secrets.get(n,"")).strip()
+    except:return ""
+def score(t):
+    t=t.lower();s=0;h=[]
+    for k,v in TERMS.items():
+        if k in t:s+=v;h.append(k)
+    s=min(100,s);p="Alta" if s>=70 else "Média" if s>=40 else "Baixa" if s>=15 else "Irrelevante"
+    return s,p,", ".join(h) if h else "-"
+def api(url,p):
+    r=requests.get(url,params=p,timeout=25)
+    if not r.ok:raise RuntimeError(f"Erro {r.status_code}: {r.text[:250]}")
     return r.json()
-
-def yt_search(query, max_videos, api_key):
-    data = api_get('https://www.googleapis.com/youtube/v3/search', params={
-        'part': 'snippet', 'q': query, 'type': 'video', 'maxResults': max_videos,
-        'order': 'relevance', 'key': api_key
-    })
-    out = []
-    for i in data.get('items', []):
-        vid = i.get('id', {}).get('videoId')
-        sn = i.get('snippet', {})
-        if vid:
-            out.append((vid, sn.get('title', ''), sn.get('channelTitle', '')))
-    return out
-
-def yt_comments(video_id, limit, api_key):
-    out = []
-    token = None
-    while len(out) < limit:
-        params = {
-            'part': 'snippet', 'videoId': video_id,
-            'maxResults': min(100, limit-len(out)),
-            'textFormat': 'plainText', 'order': 'relevance', 'key': api_key
-        }
-        if token:
-            params['pageToken'] = token
-        data = api_get('https://www.googleapis.com/youtube/v3/commentThreads', params=params)
-        for item in data.get('items', []):
-            top = item.get('snippet', {}).get('topLevelComment', {})
-            sn = top.get('snippet', {})
-            txt = sn.get('textDisplay', '')
+def videos(q,n,key,after,order):
+    p={"part":"snippet","q":q,"type":"video","maxResults":n,"order":order,"key":key}
+    if after:p["publishedAfter"]=after
+    d=api("https://www.googleapis.com/youtube/v3/search",p)
+    return [(x["id"]["videoId"],x["snippet"].get("title",""),x["snippet"].get("channelTitle","")) for x in d.get("items",[]) if x.get("id",{}).get("videoId")]
+def comments(vid,n,key):
+    out=[];token=None
+    while len(out)<n:
+        p={"part":"snippet","videoId":vid,"maxResults":min(100,n-len(out)),"textFormat":"plainText","order":"time","key":key}
+        if token:p["pageToken"]=token
+        d=api("https://www.googleapis.com/youtube/v3/commentThreads",p)
+        for i in d.get("items",[]):
+            top=i.get("snippet",{}).get("topLevelComment",{});sn=top.get("snippet",{});txt=sn.get("textDisplay","")
             if txt:
-                cid = top.get('id', '')
-                link = f'https://www.youtube.com/watch?v={video_id}'
-                if cid:
-                    link += f'&lc={cid}'
-                out.append((sn.get('authorDisplayName', ''), txt, link, sn.get('publishedAt', '')))
-            if len(out) >= limit:
-                break
-        token = data.get('nextPageToken')
-        if not token:
-            break
-    return out
-
-
-def mastodon_hashtag(instance, hashtag, limit=40):
-    instance = (instance or "").strip().rstrip("/")
-    if not instance.startswith("http://") and not instance.startswith("https://"):
-        instance = "https://" + instance
-
-    tag = (hashtag or "").strip().lstrip("#")
-    if not tag:
-        return []
-
-    data = api_get(
-        f"{instance}/api/v1/timelines/tag/{tag}",
-        params={"limit": min(40, max(1, int(limit)))}
-    )
-
-    out = []
-    for status in data:
-        account = status.get("account", {}) or {}
-        acct = account.get("acct", "")
-        author = f"@{acct}" if acct else account.get("display_name", "Não informado")
-        html = status.get("content", "") or ""
-        txt = re.sub(r"<[^>]+>", " ", html)
-        txt = re.sub(r"\s+", " ", txt).strip()
-        link = status.get("url") or status.get("uri") or "-"
-        date = status.get("created_at", "-")
-        if txt:
-            out.append((author, txt, link, date))
-    return out
-
-st.title('🎯 Radar de Intenção — V4 YouTube + Mastodon')
-st.caption('Busca sinais públicos de intenção em fontes com acesso oficial. Resultados exigem revisão humana.')
-
+                link=f"https://www.youtube.com/watch?v={vid}";cid=top.get("id","")
+                if cid:link+=f"&lc={cid}"
+                out.append((sn.get("authorDisplayName",""),txt,link,sn.get("publishedAt","")))
+        token=d.get("nextPageToken")
+        if not token:break
+    return out[:n]
+def todt(x):
+    try:return datetime.fromisoformat(x.replace("Z","+00:00"))
+    except:return None
+def cut(label):
+    d={"24 horas":1,"7 dias":7,"30 dias":30,"90 dias":90,"1 ano":365}.get(label)
+    return datetime.now(timezone.utc)-timedelta(days=d) if d else None
+def fmt(x):
+    d=todt(x);return d.astimezone().strftime("%d/%m/%Y às %H:%M") if d else "-"
+st.markdown(f"""<div class="hero"><div class="muted">INTELIGÊNCIA COMERCIAL</div><h1>🎯 Radar de Intenção</h1><div class="muted">Sinais públicos de necessidade • {datetime.now().strftime("%d/%m/%Y")}</div></div>""",unsafe_allow_html=True)
 with st.sidebar:
-    st.header('Status das fontes')
-    st.write('▶️ YouTube:', '✅ conectado' if secret('YOUTUBE_API_KEY') else '⚠️ falta chave')
-    st.write('🐘 Mastodon:', '✅ sem chave necessária')
-    st.divider()
-    st.subheader('Score')
-    for k, v in st.session_state.terms.items():
-        st.write(f'{k}: {v}')
-
-tabs = st.tabs(['🌐 Busca multirrede', '▶️ YouTube', '🐘 Mastodon', '📊 Radar'])
-
-with tabs[0]:
-    st.subheader('Busca multirrede')
-    q = st.text_input('O que procurar?', value='acidente de moto sequela', key='multiq')
-    sources = st.multiselect('Fontes', ['YouTube', 'Mastodon'], default=['YouTube', 'Mastodon'])
-    min_score = st.slider('Score mínimo', 0, 100, 30, 5, key='multiscore')
-    if st.button('🚀 Buscar em todas as fontes selecionadas'):
-        added = 0
-        if 'YouTube' in sources:
-            key = secret('YOUTUBE_API_KEY')
-            if not key:
-                st.error('Falta YOUTUBE_API_KEY.')
-            else:
-                try:
-                    for vid, title, channel in yt_search(q, 3, key):
-                        for author, text, link, date in yt_comments(vid, 50, key):
-                            sc, _, _ = score_text(text)
-                            if sc >= min_score:
-                                added += add_item('YouTube', author, text, link, f'{title} — {channel}', date)
-                except Exception as e:
-                    st.error(f'YouTube: {e}')
-        if 'Mastodon' in sources:
-            try:
-                tags = []
-                for word in q.split():
-                    clean = re.sub(r'[^0-9A-Za-zÀ-ÿ_]', '', word)
-                    if len(clean) >= 4 and clean.lower() not in [t.lower() for t in tags]:
-                        tags.append(clean)
-                for tag in tags[:4]:
-                    for author, text_post, link, date in mastodon_hashtag('mastodon.social', tag, 40):
-                        sc, _, _ = score_text(text_post)
-                        if sc >= min_score:
-                            added += add_item('Mastodon', author, text_post, link, f'#{tag} em mastodon.social', date)
-            except Exception as e:
-                st.error(f'Mastodon: {e}')
-        st.success(f'Busca concluída. {added} novos resultados adicionados ao Radar.')
-
-with tabs[1]:
-    st.subheader('YouTube')
-    q = st.text_input('Tema', value='acidente de moto sequela', key='ytq')
-    c1, c2 = st.columns(2)
-    nvid = c1.slider('Vídeos', 1, 20, 3)
-    ncom = c2.slider('Comentários por vídeo', 10, 200, 50, 10)
-    minimum = st.slider('Score mínimo', 0, 100, 30, 5, key='yts')
-    if st.button('Buscar no YouTube'):
-        key = secret('YOUTUBE_API_KEY')
-        if not key:
-            st.error('Configure YOUTUBE_API_KEY.')
+    st.header("Radar");st.write("▶️ YouTube","✅ conectado" if secret("YOUTUBE_API_KEY") else "⚠️ falta chave")
+    st.divider();st.write("🔥 Alta: 70–100");st.write("🟡 Média: 40–69");st.write("🔵 Baixa: 15–39")
+a,b=st.tabs(["🔎 Buscar oportunidades","📊 Oportunidades"])
+with a:
+    q=st.text_input("O que você procura?",value="acidente de moto sequela")
+    c1,c2,c3=st.columns(3)
+    pv=c1.selectbox("Data do vídeo",["Qualquer data","24 horas","7 dias","30 dias","90 dias","1 ano"])
+    pc=c2.selectbox("Data do comentário",["24 horas","7 dias","30 dias","90 dias","1 ano","Qualquer data"],index=2)
+    order=c3.selectbox("Priorizar vídeos",["Mais relevantes","Mais recentes"])
+    c4,c5,c6=st.columns(3);nv=c4.slider("Vídeos",1,20,5);nc=c5.slider("Comentários/vídeo",10,300,100,10);minimum=c6.slider("Score mínimo",0,100,30,5)
+    st.caption("Vídeo antigo também pode ter comentário recente.")
+    if st.button("🚀 Buscar oportunidades",type="primary",use_container_width=True):
+        key=secret("YOUTUBE_API_KEY")
+        if not key:st.error("Falta YOUTUBE_API_KEY.")
         else:
-            added = 0
+            added=read=0
             try:
-                for vid, title, channel in yt_search(q, nvid, key):
-                    for author, text, link, date in yt_comments(vid, ncom, key):
-                        sc, _, _ = score_text(text)
-                        if sc >= minimum:
-                            added += add_item('YouTube', author, text, link, f'{title} — {channel}', date)
-                st.success(f'{added} novos resultados.')
-            except Exception as e:
-                st.error(str(e))
-
-with tabs[2]:
-    st.subheader('🐘 Mastodon — posts públicos por hashtag')
-    st.info('Nesta versão de teste, não precisa de chave. A disponibilidade depende da instância.')
-
-    instance = st.text_input('Instância Mastodon', value='mastodon.social')
-    hashtag = st.text_input('Hashtag', value='acidente', help='Digite sem #')
-    c1, c2 = st.columns(2)
-    n = c1.slider('Posts para analisar', 10, 40, 40, 10, key='mast_n')
-    minimum = c2.slider('Score mínimo', 0, 100, 15, 5, key='mast_score')
-
-    if st.button('Buscar no Mastodon'):
-        added = 0
-        try:
-            results = mastodon_hashtag(instance, hashtag, n)
-            for author, text_post, link, date in results:
-                sc, _, _ = score_text(text_post)
-                if sc >= minimum:
-                    added += add_item('Mastodon', author, text_post, link, f'#{hashtag} em {instance}', date)
-            st.success(f'Busca concluída: {len(results)} posts lidos; {added} novos resultados relevantes.')
-            if not results:
-                st.info('Nenhum post público encontrado para essa hashtag nessa instância.')
-        except Exception as e:
-            st.error(f'Mastodon: {e}')
-
-with tabs[3]:
-    st.subheader('Resultados')
-    if not st.session_state["items"]:
-        st.info('Nenhum resultado ainda.')
+                vc=cut(pv);cc=cut(pc);after=vc.isoformat().replace("+00:00","Z") if vc else None
+                with st.spinner("Analisando..."):
+                    for vid,title,channel in videos(q,nv,key,after,"date" if order=="Mais recentes" else "relevance"):
+                        for author,text,link,date in comments(vid,nc,key):
+                            read+=1;d=todt(date)
+                            if cc and (not d or d<cc):continue
+                            s,pr,h=score(text)
+                            if s<minimum:continue
+                            k=(link,text);exists={(x.get("link"),x.get("texto")) for x in st.session_state["items"]}
+                            if k not in exists:
+                                st.session_state["items"].append({"autor":author,"texto":text,"score":s,"prioridade":pr,"sinais":h,"origem":f"{title} — {channel}","link":link,"data":date});added+=1
+                st.success(f"{read} comentários analisados • {added} novas oportunidades.")
+            except Exception as e:st.error(f"YouTube: {e}")
+with b:
+    if not st.session_state["items"]:st.info("Nenhuma oportunidade ainda.")
     else:
-        try:
-            df = pd.DataFrame.from_records(st.session_state["items"])
-        except Exception:
-            st.session_state["items"] = []
-            st.warning('A sessão antiga era incompatível com a V3 e foi limpa. Faça a busca novamente.')
-            st.stop()
-        priority = st.multiselect('Prioridade', ['Alta', 'Média', 'Baixa', 'Irrelevante'], default=['Alta', 'Média', 'Baixa'])
-        view = df[df['prioridade'].isin(priority)].sort_values('score', ascending=False)
-        st.metric('Resultados no Radar', len(view))
-        st.dataframe(view, use_container_width=True, hide_index=True,
-                     column_config={
-                         'score': st.column_config.ProgressColumn('Score', min_value=0, max_value=100),
-                         'link': st.column_config.LinkColumn('Abrir')
-                     })
-        st.download_button('Baixar CSV', view.to_csv(index=False).encode('utf-8-sig'), 'radar_resultados.csv', 'text/csv')
-        if st.button('Limpar Radar'):
-            st.session_state["items"] = []
-            st.rerun()
-
-st.divider()
-st.caption('Use apenas dados acessados por meios oficiais, evite coleta de dados privados e respeite LGPD, termos das plataformas e regras profissionais aplicáveis.')
+        df=pd.DataFrame(st.session_state["items"]);df["dt"]=df["data"].apply(todt)
+        c1,c2,c3,c4=st.columns(4);c1.metric("🔥 Alta",int((df.prioridade=="Alta").sum()));c2.metric("🟡 Média",int((df.prioridade=="Média").sum()));c3.metric("🔵 Baixa",int((df.prioridade=="Baixa").sum()));c4.metric("🎯 Total",len(df))
+        x,y=st.columns(2);ps=x.multiselect("Prioridade",["Alta","Média","Baixa"],default=["Alta","Média","Baixa"]);sort=y.selectbox("Ordenar",["Mais recentes","Maior score"])
+        v=df[df.prioridade.isin(ps)].copy();v=v.sort_values(["dt","score"],ascending=[False,False],na_position="last") if sort=="Mais recentes" else v.sort_values(["score","dt"],ascending=[False,False],na_position="last")
+        for _,r in v.iterrows():
+            icon="🔥" if r.prioridade=="Alta" else "🟡" if r.prioridade=="Média" else "🔵";txt=str(r.texto).replace("<","&lt;").replace(">","&gt;")
+            st.markdown(f"""<div class="card"><b>{icon} {r.prioridade} • Score {int(r.score)}/100</b><p>{txt}</p><div class="muted">👤 {r.autor} • 📅 {fmt(r.data)}<br>🎯 {r.sinais}<br>▶️ {r.origem}</div></div>""",unsafe_allow_html=True);st.link_button("Abrir comentário ↗",r.link)
+        st.download_button("⬇️ Exportar CSV",v.drop(columns=["dt"],errors="ignore").to_csv(index=False).encode("utf-8-sig"),"radar_oportunidades.csv","text/csv")
+        if st.button("🗑️ Limpar Radar"):st.session_state["items"]=[];st.rerun()
