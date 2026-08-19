@@ -17,3 +17,7 @@ Nunca publique tokens no GitHub.
 
 ## V3.1
 Correção de compatibilidade com sessão das versões anteriores.
+
+
+## V3.2
+Corrige conflito com `SessionState.items`, que causava o erro `'method' object is not iterable`.

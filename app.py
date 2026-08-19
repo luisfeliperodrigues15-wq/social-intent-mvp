@@ -21,15 +21,15 @@ DEFAULT_TERMS = {
 
 if 'terms' not in st.session_state:
     st.session_state.terms = DEFAULT_TERMS.copy()
-if 'items' not in st.session_state:
-    st.session_state.items = []
-elif not isinstance(st.session_state.items, list):
+if "items" not in st.session_state:
+    st.session_state["items"] = []
+elif not isinstance(st.session_state["items"], list):
     # Evita conflito com dados de sessão deixados por versões anteriores.
-    st.session_state.items = []
+    st.session_state["items"] = []
 else:
     # Mantém apenas registros compatíveis com a V3.
-    st.session_state.items = [
-        x for x in st.session_state.items
+    st.session_state["items"] = [
+        x for x in st.session_state["items"]
         if isinstance(x, dict)
     ]
 
@@ -60,11 +60,11 @@ def score_text(text):
 
 def add_item(source, author, text, url, origin='-', date='-'):
     key = (source, url, text)
-    existing = {(x['fonte'], x['link'], x['texto']) for x in st.session_state.items}
+    existing = {(x['fonte'], x['link'], x['texto']) for x in st.session_state["items"]}
     if key in existing:
         return False
     sc, pr, hits = score_text(text)
-    st.session_state.items.append({
+    st.session_state["items"].append({
         'fonte': source,
         'autor': author or 'Não informado',
         'texto': text,
@@ -257,13 +257,13 @@ with tabs[4]:
 
 with tabs[5]:
     st.subheader('Resultados')
-    if not st.session_state.items:
+    if not st.session_state["items"]:
         st.info('Nenhum resultado ainda.')
     else:
         try:
-            df = pd.DataFrame.from_records(st.session_state.items)
+            df = pd.DataFrame.from_records(st.session_state["items"])
         except Exception:
-            st.session_state.items = []
+            st.session_state["items"] = []
             st.warning('A sessão antiga era incompatível com a V3 e foi limpa. Faça a busca novamente.')
             st.stop()
         priority = st.multiselect('Prioridade', ['Alta', 'Média', 'Baixa', 'Irrelevante'], default=['Alta', 'Média', 'Baixa'])
@@ -276,7 +276,7 @@ with tabs[5]:
                      })
         st.download_button('Baixar CSV', view.to_csv(index=False).encode('utf-8-sig'), 'radar_resultados.csv', 'text/csv')
         if st.button('Limpar Radar'):
-            st.session_state.items = []
+            st.session_state["items"] = []
             st.rerun()
 
 st.divider()
