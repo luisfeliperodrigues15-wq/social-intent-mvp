@@ -13,3 +13,7 @@ X_BEARER_TOKEN = "..."
 ```
 
 Nunca publique tokens no GitHub.
+
+
+## V3.1
+Correção de compatibilidade com sessão das versões anteriores.

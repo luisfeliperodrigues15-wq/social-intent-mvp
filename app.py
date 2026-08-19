@@ -23,6 +23,15 @@ if 'terms' not in st.session_state:
     st.session_state.terms = DEFAULT_TERMS.copy()
 if 'items' not in st.session_state:
     st.session_state.items = []
+elif not isinstance(st.session_state.items, list):
+    # Evita conflito com dados de sessão deixados por versões anteriores.
+    st.session_state.items = []
+else:
+    # Mantém apenas registros compatíveis com a V3.
+    st.session_state.items = [
+        x for x in st.session_state.items
+        if isinstance(x, dict)
+    ]
 
 def secret(name):
     try:
@@ -251,7 +260,12 @@ with tabs[5]:
     if not st.session_state.items:
         st.info('Nenhum resultado ainda.')
     else:
-        df = pd.DataFrame(st.session_state.items)
+        try:
+            df = pd.DataFrame.from_records(st.session_state.items)
+        except Exception:
+            st.session_state.items = []
+            st.warning('A sessão antiga era incompatível com a V3 e foi limpa. Faça a busca novamente.')
+            st.stop()
         priority = st.multiselect('Prioridade', ['Alta', 'Média', 'Baixa', 'Irrelevante'], default=['Alta', 'Média', 'Baixa'])
         view = df[df['prioridade'].isin(priority)].sort_values('score', ascending=False)
         st.metric('Resultados no Radar', len(view))
