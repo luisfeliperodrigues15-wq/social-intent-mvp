@@ -1,20 +1,15 @@
-# Radar de Intenção — MVP v2
+# Radar de Intenção V3 — Multirrede
 
-Versão experimental com integração à API oficial do YouTube.
+## Fontes
+- YouTube: funcional via YouTube Data API v3.
+- X: funcional via X API v2 Recent Search.
+- Instagram/Facebook: limitado pela API oficial da Meta.
+- Reddit: reservado até validação do uso comercial/API.
 
-## Novidades
-- Busca vídeos por tema.
-- Lê comentários públicos de vídeos.
-- Calcula score automaticamente.
-- Importa apenas comentários acima do score mínimo.
-- Permite analisar um vídeo específico.
-- Mantém entrada manual e exportação CSV.
-
-## Streamlit Secret
-No Streamlit Community Cloud, configure:
-
+## Secrets
 ```toml
-YOUTUBE_API_KEY = "SUA_CHAVE_AQUI"
+YOUTUBE_API_KEY = "..."
+X_BEARER_TOKEN = "..."
 ```
 
-Nunca coloque a chave diretamente no código público do GitHub.
+Nunca publique tokens no GitHub.
