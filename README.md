@@ -1,6 +1,10 @@
-# Radar de Intenção V5.3
+# V6.0 — Acesso de demonstração
 
-Correção do erro NameError:
-- as abas `a`, `b` e `c` são criadas antes de serem usadas;
-- a aba "Todos analisados" foi movida para a posição correta;
-- mantém filtros de data, score ampliado e visual do dashboard.
+No Streamlit Secrets, mantenha `YOUTUBE_API_KEY` e acrescente:
+
+TEST_USERNAME = "demo"
+TEST_PASSWORD = "SUA_SENHA"
+
+Para revogar o teste, troque `TEST_PASSWORD`. Há também botão "Sair".
+
+Este é um login simples de demonstração. Para clientes reais, use contas individuais.

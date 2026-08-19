@@ -5,6 +5,27 @@ from datetime import datetime, timezone, timedelta
 
 st.set_page_config(page_title="Radar de Intenção",page_icon="🎯",layout="wide")
 st.markdown("""<style>.block-container{max-width:1250px;padding-top:1.5rem}.hero,.card{border:1px solid rgba(128,128,128,.22);border-radius:18px;padding:1.2rem;margin-bottom:1rem}.hero h1{margin:0}.muted{opacity:.68}.card{border-radius:14px}</style>""",unsafe_allow_html=True)
+# ---------- Acesso de demonstração ----------
+def _login_secret(name, fallback=""):
+    try: return str(st.secrets.get(name, fallback)).strip()
+    except Exception: return fallback
+
+if "authenticated" not in st.session_state: st.session_state["authenticated"]=False
+if not st.session_state["authenticated"]:
+    st.markdown("""<div class="hero"><div class="muted">ACESSO DE DEMONSTRAÇÃO</div><h1>🎯 Radar de Intenção</h1><div class="muted">Entre para acessar o ambiente de teste.</div></div>""",unsafe_allow_html=True)
+    with st.form("login_form"):
+        login_user=st.text_input("Usuário")
+        login_pass=st.text_input("Senha",type="password")
+        entrar=st.form_submit_button("Entrar",type="primary",use_container_width=True)
+    if entrar:
+        u=_login_secret("TEST_USERNAME","demo"); p=_login_secret("TEST_PASSWORD","")
+        if not p: st.error("O acesso de teste ainda não foi configurado.")
+        elif login_user==u and login_pass==p:
+            st.session_state["authenticated"]=True; st.rerun()
+        else: st.error("Usuário ou senha incorretos.")
+    st.caption("Ambiente demonstrativo • acesso controlado")
+    st.stop()
+
 TERMS={
 "acidente":20,"acidente de moto":35,"acidente de trabalho":35,"bati a moto":35,
 "bati de moto":35,"me acidentei":35,"sofri um acidente":35,"aconteceu comigo":25,
@@ -51,7 +72,12 @@ def comments(vid,n,key):
     while len(out)<n:
         p={"part":"snippet","videoId":vid,"maxResults":min(100,n-len(out)),"textFormat":"plainText","order":"time","key":key}
         if token:p["pageToken"]=token
-        d=api("https://www.googleapis.com/youtube/v3/commentThreads",p)
+        r=requests.get("https://www.googleapis.com/youtube/v3/commentThreads",params=p,timeout=25)
+        if not r.ok:
+            if r.status_code in (403,404):
+                return [], "comments_unavailable"
+            raise RuntimeError(f"Erro {r.status_code}: {r.text[:250]}")
+        d=r.json()
         for i in d.get("items",[]):
             top=i.get("snippet",{}).get("topLevelComment",{});sn=top.get("snippet",{});txt=sn.get("textDisplay","")
             if txt:
@@ -60,7 +86,7 @@ def comments(vid,n,key):
                 out.append((sn.get("authorDisplayName",""),txt,link,sn.get("publishedAt","")))
         token=d.get("nextPageToken")
         if not token:break
-    return out[:n]
+    return out[:n], None
 def todt(x):
     try:return datetime.fromisoformat(x.replace("Z","+00:00"))
     except:return None
@@ -71,7 +97,12 @@ def fmt(x):
     d=todt(x);return d.astimezone().strftime("%d/%m/%Y às %H:%M") if d else "-"
 st.markdown(f"""<div class="hero"><div class="muted">INTELIGÊNCIA COMERCIAL</div><h1>🎯 Radar de Intenção</h1><div class="muted">Sinais públicos de necessidade • {datetime.now().strftime("%d/%m/%Y")}</div></div>""",unsafe_allow_html=True)
 with st.sidebar:
-    st.header("Radar");st.write("▶️ YouTube","✅ conectado" if secret("YOUTUBE_API_KEY") else "⚠️ falta chave")
+    st.header("Radar")
+    st.caption(f"Acesso: {_login_secret('TEST_USERNAME','demo')}")
+    if st.button("🚪 Sair",use_container_width=True):
+        st.session_state["authenticated"]=False
+        st.rerun()
+    st.write("▶️ YouTube","✅ conectado" if secret("YOUTUBE_API_KEY") else "⚠️ falta chave")
     
 st.divider();st.write("🔥 Alta: 70–100");st.write("🟡 Média: 40–69");st.write("🔵 Baixa: 15–39")
 a,b,c=st.tabs(["🔎 Buscar oportunidades","📊 Oportunidades","🧪 Todos analisados"])
@@ -87,12 +118,16 @@ with a:
         key=secret("YOUTUBE_API_KEY")
         if not key:st.error("Falta YOUTUBE_API_KEY.")
         else:
-            added=read=0
+            added=read=0;skipped=0
             try:
                 vc=cut(pv);cc=cut(pc);after=vc.isoformat().replace("+00:00","Z") if vc else None
                 with st.spinner("Analisando..."):
                     for vid,title,channel in videos(q,nv,key,after,"date" if order=="Mais recentes" else "relevance"):
-                        for author,text,link,date in comments(vid,nc,key):
+                        comment_rows, issue = comments(vid,nc,key)
+                        if issue:
+                            skipped += 1
+                            continue
+                        for author,text,link,date in comment_rows:
                             read+=1;d=todt(date)
                             if cc and (not d or d<cc):continue
                             s,pr,h=score(text)
@@ -107,7 +142,7 @@ with a:
                             exists={(x.get("link"),x.get("texto")) for x in st.session_state["items"]}
                             if k not in exists:
                                 st.session_state["items"].append(row.copy());added+=1
-                st.success(f"{read} comentários analisados • {added} novas oportunidades.")
+                st.success(f"{read} comentários analisados • {added} novas oportunidades • {skipped} vídeos ignorados por comentários indisponíveis.")
             except Exception as e:st.error(f"YouTube: {e}")
 with b:
     if not st.session_state["items"]:st.info("Nenhuma oportunidade ainda.")
