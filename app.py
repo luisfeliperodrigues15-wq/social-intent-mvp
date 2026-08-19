@@ -73,29 +73,6 @@ st.markdown(f"""<div class="hero"><div class="muted">INTELIGÊNCIA COMERCIAL</di
 with st.sidebar:
     st.header("Radar");st.write("▶️ YouTube","✅ conectado" if secret("YOUTUBE_API_KEY") else "⚠️ falta chave")
     
-with c:
-    st.subheader("🧪 Todos os comentários analisados")
-    st.caption("Aqui aparecem também os comentários que não atingiram o score mínimo. Isso ajuda a calibrar o Radar.")
-    if not st.session_state["all_items"]:
-        st.info("Nenhum comentário analisado ainda.")
-    else:
-        adf=pd.DataFrame(st.session_state["all_items"])
-        adf["dt"]=adf["data"].apply(todt)
-        adf=adf.sort_values(["dt","score"],ascending=[False,False],na_position="last")
-        st.metric("Comentários guardados",len(adf))
-        for _,r in adf.iterrows():
-            icon="🔥" if r.prioridade=="Alta" else "🟡" if r.prioridade=="Média" else "🔵" if r.prioridade=="Baixa" else "⚪"
-            txt=str(r.texto).replace("<","&lt;").replace(">","&gt;")
-            st.markdown(f"""<div class="card"><b>{icon} {r.prioridade} • Score {int(r.score)}/100</b>
-            <p>{txt}</p><div class="muted">👤 {r.autor} • 📅 {fmt(r.data)}<br>🎯 {r.sinais}<br>▶️ {r.origem}</div></div>""",
-            unsafe_allow_html=True)
-            st.link_button("Abrir comentário ↗",r.link,key=f"all_{r.link}_{_}")
-        st.download_button("⬇️ Exportar todos",adf.drop(columns=["dt"],errors="ignore").to_csv(index=False).encode("utf-8-sig"),
-                           "radar_todos_analisados.csv","text/csv")
-        if st.button("🗑️ Limpar todos analisados"):
-            st.session_state["all_items"]=[]
-            st.rerun()
-
 st.divider();st.write("🔥 Alta: 70–100");st.write("🟡 Média: 40–69");st.write("🔵 Baixa: 15–39")
 a,b,c=st.tabs(["🔎 Buscar oportunidades","📊 Oportunidades","🧪 Todos analisados"])
 with a:
@@ -144,3 +121,26 @@ with b:
             st.markdown(f"""<div class="card"><b>{icon} {r.prioridade} • Score {int(r.score)}/100</b><p>{txt}</p><div class="muted">👤 {r.autor} • 📅 {fmt(r.data)}<br>🎯 {r.sinais}<br>▶️ {r.origem}</div></div>""",unsafe_allow_html=True);st.link_button("Abrir comentário ↗",r.link)
         st.download_button("⬇️ Exportar CSV",v.drop(columns=["dt"],errors="ignore").to_csv(index=False).encode("utf-8-sig"),"radar_oportunidades.csv","text/csv")
         if st.button("🗑️ Limpar Radar"):st.session_state["items"]=[];st.rerun()
+
+with c:
+    st.subheader("🧪 Todos os comentários analisados")
+    st.caption("Aqui aparecem também os comentários que não atingiram o score mínimo. Isso ajuda a calibrar o Radar.")
+    if not st.session_state["all_items"]:
+        st.info("Nenhum comentário analisado ainda.")
+    else:
+        adf=pd.DataFrame(st.session_state["all_items"])
+        adf["dt"]=adf["data"].apply(todt)
+        adf=adf.sort_values(["dt","score"],ascending=[False,False],na_position="last")
+        st.metric("Comentários guardados",len(adf))
+        for _,r in adf.iterrows():
+            icon="🔥" if r.prioridade=="Alta" else "🟡" if r.prioridade=="Média" else "🔵" if r.prioridade=="Baixa" else "⚪"
+            txt=str(r.texto).replace("<","&lt;").replace(">","&gt;")
+            st.markdown(f"""<div class="card"><b>{icon} {r.prioridade} • Score {int(r.score)}/100</b>
+            <p>{txt}</p><div class="muted">👤 {r.autor} • 📅 {fmt(r.data)}<br>🎯 {r.sinais}<br>▶️ {r.origem}</div></div>""",
+            unsafe_allow_html=True)
+            st.link_button("Abrir comentário ↗",r.link,key=f"all_{r.link}_{_}")
+        st.download_button("⬇️ Exportar todos",adf.drop(columns=["dt"],errors="ignore").to_csv(index=False).encode("utf-8-sig"),
+                           "radar_todos_analisados.csv","text/csv")
+        if st.button("🗑️ Limpar todos analisados"):
+            st.session_state["all_items"]=[]
+            st.rerun()

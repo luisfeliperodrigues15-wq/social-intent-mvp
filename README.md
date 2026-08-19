@@ -1,7 +1,6 @@
-# Radar de Intenção V5.2
+# Radar de Intenção V5.3
 
-Correção do erro `NameError` da V5.1:
-- cria corretamente as três abas: Busca, Oportunidades e Todos analisados;
-- mantém os filtros de data;
-- mantém o score ampliado;
-- mantém a aba com todos os comentários analisados.
+Correção do erro NameError:
+- as abas `a`, `b` e `c` são criadas antes de serem usadas;
+- a aba "Todos analisados" foi movida para a posição correta;
+- mantém filtros de data, score ampliado e visual do dashboard.
